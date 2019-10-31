@@ -18,7 +18,7 @@ spec:
             resource: git-source
     - name: build-image
       taskRef:
-        name: build-image
+        name: build-ibm-cloud-image
       runAfter: [js-test]
       resources:
         inputs:
