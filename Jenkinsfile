@@ -51,10 +51,11 @@ spec:
         - name: HOME
           value: ${workingDir}
     - name: ibmcloud
-      image: docker.io/garagecatalyst/ibmcloud-dev:1.0.8
+      image: docker.io/garagecatalyst/ibmcloud-dev:1.0.9
       tty: true
       command: ["/bin/bash"]
       workingDir: ${workingDir}
+      privileged: true
       envFrom:
         - configMapRef:
             name: ibmcloud-config
@@ -89,7 +90,6 @@ spec:
             checkout scm
             stage('Setup') {
                 sh '''#!/bin/bash
-                    set -x
                     # Export project name (lowercase), version, and build number to ./env-config
                     npm run env | grep "^npm_package_name" | tr '[:upper:]' '[:lower:]' | sed "s/_/-/g" | sed "s/npm-package-name/IMAGE_NAME/g" > ./env-config
                     npm run env | grep "^npm_package_version" | sed "s/npm_package_version/IMAGE_VERSION/g" >> ./env-config
@@ -99,26 +99,22 @@ spec:
             }
             stage('Build') {
                 sh '''#!/bin/bash
-                    set -x
                     npm install
                     npm run build
                 '''
             }
             stage('Test') {
                 sh '''#!/bin/bash
-                    set -x
                     npm test
                 '''
             }
             stage('Publish pacts') {
                 sh '''#!/bin/bash
-                    set -x
                     npm run pact:publish
                 '''
             }
             stage('Verify pact') {
                 sh '''#!/bin/bash
-                    set -x
                     npm run pact:verify
                 '''
             }
@@ -130,7 +126,6 @@ spec:
                   exit 0
                 fi
 
-                set -x
                 npm run sonarqube:scan
                 '''
             }
@@ -138,13 +133,10 @@ spec:
         container(name: 'ibmcloud', shell: '/bin/bash') {
             stage('Build image') {
                 sh '''#!/bin/bash
-                    set -x
-                    
                     . ./env-config
 
                     echo -e "=========================================================================================="
                     echo -e "BUILDING CONTAINER IMAGE: ${REGISTRY_URL}/${REGISTRY_NAMESPACE}/${IMAGE_NAME}:${IMAGE_VERSION}"
-                    set -x
                     buildah bud -t ${IMAGE_NAME}:${IMAGE_VERSION} .
                     
                     echo -e "PUSHING CONTAINER IMAGE: ${REGISTRY_URL}/${REGISTRY_NAMESPACE}/${IMAGE_NAME}:${IMAGE_VERSION}"
@@ -159,7 +151,6 @@ spec:
             stage('Deploy to DEV env') {
                 sh '''#!/bin/bash
                     echo "Deploying to ${ENVIRONMENT_NAME}"
-                    set -x
 
                     . ./env-config
 
@@ -235,12 +226,10 @@ spec:
                     echo "Could not reach health endpoint: http://${INGRESS_HOST}:${PORT}/health"
                         exit 1;
                     fi;
-
                 '''
             }
             stage('Package Helm Chart') {
                 sh '''#!/bin/bash
-                set -x
 
                 if [[ -z "${ARTIFACTORY_ENCRPT}" ]]; then
                   echo "Skipping Artifactory step as Artifactory is not installed or configured"
@@ -257,8 +246,6 @@ spec:
                     echo "Encrption key not available for Jenkins pipeline, please add it to the artifactory-access"
                     exit 1
                 fi
-
-                sudo apt-get install jq.
 
                 # Check if a Generic Local Repo has been created and retrieve the URL for it
                 export URL=$(curl -u${ARTIFACTORY_USER}:${ARTIFACTORY_PASSWORD} -X GET "${ARTIFACTORY_URL}/artifactory/api/repositories?type=LOCAL" | jq '.[0].url' | tr -d \\")
@@ -293,8 +280,7 @@ spec:
                 curl -u${ARTIFACTORY_USER}:${ARTIFACTORY_ENCRPT} -i -vvv -T ${IMAGE_NAME}-${IMAGE_BUILD_VERSION}.tgz "${URL}/${REGISTRY_NAMESPACE}/${IMAGE_NAME}-${IMAGE_BUILD_VERSION}.tgz"
 
                 # Persist the Helm Chart in Artifactory for us by ArgoCD
-                curl -u${ARTIFACTORY_USER}:${ARTIFACTORY_ENCRPT} -i -vvv -T index.yaml "${URL}/${REGISTRY_NAMESPACE}/index.yaml"
-
+                curl -u${ARTIFACTORY_USER}:${ARTIFACTORY_ENCRPT} -i -vvv -T index.yaml "${URL}/${REGISTRY_NAMESPACE}/index.yaml". ~
             '''
             }
             stage('Trigger CD Pipeline') {
