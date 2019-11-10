@@ -49,6 +49,20 @@ spec:
       env:
         - name: HOME
           value: ${workingDir}
+    - name: buildah
+      image: quay.io/buildah/stable:v1.9.0
+      command: ["/bin/bash"]
+      workingDir: ${workingDir}
+      securityContext:
+        privileged: true
+      envFrom:
+        - configMapRef:
+            name: ibmcloud-config
+        - secretRef:
+            name: ibmcloud-apikey
+      env:
+        - name: BUILD_NUMBER
+          value: ${env.BUILD_NUMBER}
     - name: ibmcloud
       image: docker.io/garagecatalyst/ibmcloud-dev:1.0.9
       tty: true
@@ -129,7 +143,7 @@ spec:
                 '''
             }
         }
-        container(name: 'ibmcloud', shell: '/bin/bash') {
+        container(name: 'buildah', shell: '/bin/bash') {
             stage('Build image') {
                 sh '''#!/bin/bash
                     . ./env-config
@@ -137,16 +151,18 @@ spec:
                     echo -e "=========================================================================================="
                     echo -e "BUILDING CONTAINER IMAGE: ${REGISTRY_URL}/${REGISTRY_NAMESPACE}/${IMAGE_NAME}:${IMAGE_VERSION}"
                     sudo buildah bud -t ${IMAGE_NAME}:${IMAGE_VERSION} .
-                    
+
                     echo -e "PUSHING CONTAINER IMAGE: ${REGISTRY_URL}/${REGISTRY_NAMESPACE}/${IMAGE_NAME}:${IMAGE_VERSION}"
                     sudo buildah push --creds ${REGISTRY_USER}:${APIKEY} ${IMAGE_NAME}:${IMAGE_VERSION} ${REGISTRY_URL}/${REGISTRY_NAMESPACE}/${IMAGE_NAME}:${IMAGE_VERSION}
-                    
+
                     if [[ -n "${BUILD_NUMBER}" ]]; then
                         echo -e "PUSHING CONTAINER IMAGE: ${REGISTRY_URL}/${REGISTRY_NAMESPACE}/${IMAGE_NAME}:${IMAGE_VERSION}-${BUILD_NUMBER}"
                         sudo buildah push --creds ${REGISTRY_USER}:${APIKEY} ${IMAGE_NAME}:${IMAGE_VERSION} ${REGISTRY_URL}/${REGISTRY_NAMESPACE}/${IMAGE_NAME}:${IMAGE_VERSION}-${BUILD_NUMBER}
                     fi
                 '''
             }
+        }
+        container(name: 'ibmcloud', shell: '/bin/bash') {
             stage('Deploy to DEV env') {
                 sh '''#!/bin/bash
                     echo "Deploying to ${ENVIRONMENT_NAME}"
