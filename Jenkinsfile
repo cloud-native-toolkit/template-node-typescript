@@ -30,6 +30,9 @@ apiVersion: v1
 kind: Pod
 spec:
   serviceAccountName: jenkins
+  volumes:
+    - name: varlibcontainers
+      emptyDir: {}
   containers:
     - name: node
       image: node:11-stretch
@@ -53,6 +56,9 @@ spec:
       image: quay.io/buildah/stable:v1.9.0
       command: ["/bin/bash"]
       workingDir: ${workingDir}
+      volumeMounts:
+        - mountPath: /var/lib/containers
+          name: varlibcontainers
       securityContext:
         privileged: true
       envFrom:
