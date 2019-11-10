@@ -30,9 +30,6 @@ apiVersion: v1
 kind: Pod
 spec:
   serviceAccountName: jenkins
-  volumes:
-    - name: varlibcontainers
-      emptyDir: {}
   containers:
     - name: node
       image: node:11-stretch
@@ -59,6 +56,7 @@ spec:
       volumeMounts:
         - mountPath: /var/lib/containers
           name: varlibcontainers
+      privileged: true
       securityContext:
         privileged: true
       envFrom:
@@ -102,6 +100,9 @@ spec:
           value: ${namespace}
         - name: BUILD_NUMBER
           value: ${env.BUILD_NUMBER}
+  volumes:
+    - name: varlibcontainers
+      emptyDir: {}
 """
 ) {
     node(buildLabel) {
