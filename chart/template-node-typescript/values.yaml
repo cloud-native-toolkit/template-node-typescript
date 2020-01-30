@@ -31,4 +31,7 @@ ingress:
   subdomain: containers.appdomain.cloud
   path: "/"
 
+route:
+  enabled: false
+
 #  tlsSecretName: ""
