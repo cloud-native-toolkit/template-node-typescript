@@ -21,7 +21,7 @@ def buildAgentName(String jobNameWithNamespace, String buildNumber, String names
 }
 
 def removeNamespaceFromJobName(String jobName, String namespace) {
-    return jobName.replaceAll(namespace + "-", "");
+    return jobName.replace(namespace + "-", "").replace(namespace + "-", "");
 }
 
 def buildLabel = buildAgentName(env.JOB_NAME, env.BUILD_NUMBER, env.NAMESPACE);
