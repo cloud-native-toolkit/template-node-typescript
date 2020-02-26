@@ -10,7 +10,9 @@
  * to run in both Kubernetes and OpenShift environments.
  */
 
-def buildAgentName(String jobName, String buildNumber) {
+def buildAgentName(String jobNameWithNamespace, String buildNumber, String namespace) {
+    def jobName = removeNamespaceFromJobName(jobNameWithNamespace, namespace);
+
     if (jobName.length() > 55) {
         jobName = jobName.substring(0, 55);
     }
@@ -18,7 +20,11 @@ def buildAgentName(String jobName, String buildNumber) {
     return "a.${jobName}${buildNumber}".replace('_', '-').replace('/', '-').replace('-.', '.');
 }
 
-def buildLabel = buildAgentName(env.JOB_NAME, env.BUILD_NUMBER);
+def removeNamespaceFromJobName(String jobName, String namespace) {
+    return jobName.replaceAll(namespace + "-", "");
+}
+
+def buildLabel = buildAgentName(env.JOB_NAME, env.BUILD_NUMBER, env.NAMESPACE);
 def namespace = env.NAMESPACE ?: "dev"
 def cloudName = env.CLOUD_NAME == "openshift" ? "openshift" : "kubernetes"
 def workingDir = "/home/jenkins/agent"
@@ -189,7 +195,7 @@ spec:
                       cat "${CHART_ROOT}/${CHART_NAME}/Chart.yaml" | \
                           yq w - name "${IMAGE_NAME}" > "${CHART_ROOT}/${IMAGE_NAME}/Chart.yaml"
                     fi
-                    
+
                     CHART_PATH="${CHART_ROOT}/${IMAGE_NAME}"
 
                     echo "KUBECONFIG=${KUBECONFIG}"
@@ -200,19 +206,19 @@ spec:
                     if [[ -n "${BUILD_NUMBER}" ]]; then
                       IMAGE_VERSION="${IMAGE_VERSION}-${BUILD_NUMBER}"
                     fi
-                    
+
                     echo "INITIALIZING helm with client-only (no Tiller)"
                     helm init --client-only 1> /dev/null 2> /dev/null
-                    
+
                     echo "CHECKING CHART (lint)"
                     helm lint ${CHART_PATH}
                     if [[ $? -ne 0 ]]; then
                       exit 1
                     fi
-                    
+
                     IMAGE_REPOSITORY="${REGISTRY_URL}/${REGISTRY_NAMESPACE}/${IMAGE_NAME}"
                     PIPELINE_IMAGE_URL="${REGISTRY_URL}/${REGISTRY_NAMESPACE}/${IMAGE_NAME}:${IMAGE_VERSION}"
-                    
+
                     # Update helm chart with repository and tag values
                     cat ${CHART_PATH}/values.yaml | \
                         yq w - nameOverride "${IMAGE_NAME}" | \
@@ -228,10 +234,10 @@ spec:
                         --namespace ${ENVIRONMENT_NAME} \
                         --set ingress.tlsSecretName="${TLS_SECRET_NAME}" \
                         --set ingress.subdomain="${INGRESS_SUBDOMAIN}" > ./release.yaml
-                    
+
                     echo -e "Generated release yaml for: ${CLUSTER_NAME}/${ENVIRONMENT_NAME}."
                     cat ./release.yaml
-                    
+
                     echo -e "Deploying into: ${CLUSTER_NAME}/${ENVIRONMENT_NAME}."
                     kubectl apply -n ${ENVIRONMENT_NAME} -f ./release.yaml
 
