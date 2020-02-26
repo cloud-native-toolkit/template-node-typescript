@@ -24,7 +24,7 @@ def removeNamespaceFromJobName(String jobName, String namespace) {
     return jobName.replaceAll(namespace + "-", "");
 }
 
-def buildLabel = buildAgentName(env.JOB_NAME, env.BUILD_NUMBER);
+def buildLabel = buildAgentName(env.JOB_NAME, env.BUILD_NUMBER, env.NAMESPACE);
 def namespace = env.NAMESPACE ?: "dev"
 def cloudName = env.CLOUD_NAME == "openshift" ? "openshift" : "kubernetes"
 def workingDir = "/home/jenkins/agent"
