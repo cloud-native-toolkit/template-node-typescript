@@ -10,9 +10,7 @@
  * to run in both Kubernetes and OpenShift environments.
  */
 
-def buildAgentName(String jobNameWithNamespace, String buildNumber, String namespace) {
-    def jobName = removeNamespaceFromJobName(jobNameWithNamespace, namespace);
-
+def buildAgentName(String jobName, String buildNumber) {
     if (jobName.length() > 55) {
         jobName = jobName.substring(0, 55);
     }
@@ -20,11 +18,7 @@ def buildAgentName(String jobNameWithNamespace, String buildNumber, String names
     return "a.${jobName}${buildNumber}".replace('_', '-').replace('/', '-').replace('-.', '.');
 }
 
-def removeNamespaceFromJobName(String jobName, String namespace) {
-    return jobName.replace(namespace + "-", "").replace(namespace + "-", "");
-}
-
-def buildLabel = buildAgentName(env.JOB_NAME, env.BUILD_NUMBER, env.NAMESPACE);
+def buildLabel = buildAgentName(env.JOB_NAME, env.BUILD_NUMBER);
 def namespace = env.NAMESPACE ?: "dev"
 def cloudName = env.CLOUD_NAME == "openshift" ? "openshift" : "kubernetes"
 def workingDir = "/home/jenkins/agent"
@@ -55,28 +49,9 @@ spec:
       env:
         - name: HOME
           value: ${workingDir}
-    - name: buildah
-      image: quay.io/buildah/stable:v1.9.0
-      command: ["/bin/bash"]
-      workingDir: ${workingDir}
-      envFrom:
-        - configMapRef:
-            name: ibmcloud-config
-        - secretRef:
-            name: ibmcloud-apikey
-      env:
-        - name: BUILD_NUMBER
-          value: ${env.BUILD_NUMBER}
-        - name: TLSVERIFY
-          value: false
-        - name: DOCKERFILE
-          value: "./Dockerfile"
-        - name: CONTEXT
-          value: "."
-      securityContext:
-        privileged: true
-    - name: deploy
-      image: docker.io/csantanapr/helm-kubectl
+    - name: ibmcloud
+      image: docker.io/garagecatalyst/ibmcloud-dev:1.0.8
+      tty: true
       command: ["/bin/bash"]
       workingDir: ${workingDir}
       envFrom:
@@ -165,25 +140,25 @@ spec:
                 '''
             }
         }
-        container(name: 'buildah', shell: '/bin/bash') {
+        container(name: 'ibmcloud', shell: '/bin/bash') {
             stage('Build image') {
-                sh '''
+                sh '''#!/bin/bash
+
                     . ./env-config
 
-                    IMAGE_TAG="${REGISTRY_URL}/${REGISTRY_NAMESPACE}/${IMAGE_NAME}:${IMAGE_VERSION}"
-                    BUILD_TAG="${REGISTRY_URL}/${REGISTRY_NAMESPACE}/${IMAGE_NAME}:${IMAGE_VERSION}-${BUILD_NUMBER}"
-
-                    buildah bud  --tls-verify="${TLSVERIFY}" --format=docker -f ${DOCKERFILE} -t ${IMAGE_TAG} ${CONTEXT}
-                    if [[ -n "${REGISTRY_USER}" ]] && [[ -n "${REGISTRY_PASSWORD}" ]]; then
-                      buildah login -u "${REGISTRY_USER}" -p "${REGISTRY_PASSWORD}" "${REGISTRY_URL}"
+                    echo -e "=========================================================================================="
+                    echo -e "BUILDING CONTAINER IMAGE: ${REGISTRY_URL}/${REGISTRY_NAMESPACE}/${IMAGE_NAME}:${IMAGE_VERSION}"
+                    ibmcloud cr build -t ${REGISTRY_URL}/${REGISTRY_NAMESPACE}/${IMAGE_NAME}:${IMAGE_VERSION} .
+                    if [[ $? -ne 0 ]]; then
+                      exit 1
                     fi
-                    buildah push --tls-verify="${TLSVERIFY}" "${IMAGE_TAG}" "docker://${IMAGE_TAG}"
-                    buildah tag ${IMAGE_TAG} ${BUILD_TAG}
-                    buildah push --tls-verify="${TLSVERIFY}" "${BUILD_TAG}" "docker://${BUILD_TAG}"
+
+                    if [[ -n "${BUILD_NUMBER}" ]]; then
+                        echo -e "BUILDING CONTAINER IMAGE: ${REGISTRY_URL}/${REGISTRY_NAMESPACE}/${IMAGE_NAME}:${IMAGE_VERSION}-${BUILD_NUMBER}"
+                        ibmcloud cr image-tag ${REGISTRY_URL}/${REGISTRY_NAMESPACE}/${IMAGE_NAME}:${IMAGE_VERSION} ${REGISTRY_URL}/${REGISTRY_NAMESPACE}/${IMAGE_NAME}:${IMAGE_VERSION}-${BUILD_NUMBER}
+                    fi
                 '''
             }
-        }
-        container(name: 'deploy', shell: '/bin/bash') {
             stage('Deploy to DEV env') {
                 sh '''#!/bin/bash
                     echo "Deploying to ${ENVIRONMENT_NAME}"
@@ -195,7 +170,7 @@ spec:
                       cat "${CHART_ROOT}/${CHART_NAME}/Chart.yaml" | \
                           yq w - name "${IMAGE_NAME}" > "${CHART_ROOT}/${IMAGE_NAME}/Chart.yaml"
                     fi
-
+                    
                     CHART_PATH="${CHART_ROOT}/${IMAGE_NAME}"
 
                     echo "KUBECONFIG=${KUBECONFIG}"
@@ -206,19 +181,19 @@ spec:
                     if [[ -n "${BUILD_NUMBER}" ]]; then
                       IMAGE_VERSION="${IMAGE_VERSION}-${BUILD_NUMBER}"
                     fi
-
+                    
                     echo "INITIALIZING helm with client-only (no Tiller)"
                     helm init --client-only 1> /dev/null 2> /dev/null
-
+                    
                     echo "CHECKING CHART (lint)"
                     helm lint ${CHART_PATH}
                     if [[ $? -ne 0 ]]; then
                       exit 1
                     fi
-
+                    
                     IMAGE_REPOSITORY="${REGISTRY_URL}/${REGISTRY_NAMESPACE}/${IMAGE_NAME}"
                     PIPELINE_IMAGE_URL="${REGISTRY_URL}/${REGISTRY_NAMESPACE}/${IMAGE_NAME}:${IMAGE_VERSION}"
-
+                    
                     # Update helm chart with repository and tag values
                     cat ${CHART_PATH}/values.yaml | \
                         yq w - nameOverride "${IMAGE_NAME}" | \
@@ -234,10 +209,10 @@ spec:
                         --namespace ${ENVIRONMENT_NAME} \
                         --set ingress.tlsSecretName="${TLS_SECRET_NAME}" \
                         --set ingress.subdomain="${INGRESS_SUBDOMAIN}" > ./release.yaml
-
+                    
                     echo -e "Generated release yaml for: ${CLUSTER_NAME}/${ENVIRONMENT_NAME}."
                     cat ./release.yaml
-
+                    
                     echo -e "Deploying into: ${CLUSTER_NAME}/${ENVIRONMENT_NAME}."
                     kubectl apply -n ${ENVIRONMENT_NAME} -f ./release.yaml
 
@@ -369,3 +344,4 @@ spec:
         }
     }
 }
+
