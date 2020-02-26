@@ -229,7 +229,7 @@ spec:
                     cat ./release.yaml
 
                     echo -e "Deploying into: ${CLUSTER_NAME}/${ENVIRONMENT_NAME}."
-                    kubectl apply -n ${ENVIRONMENT_NAME} -f ./release.yaml
+                    kubectl apply -n ${ENVIRONMENT_NAME} -f ./release.yaml --validate=false
                 '''
             }
             stage('Health Check') {
