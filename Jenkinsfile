@@ -15,9 +15,7 @@ def buildAgentName(String jobName, String buildNumber) {
         jobName = jobName.substring(0, 55);
     }
 
-    agentName = "a.${jobName}${buildNumber}".replace('_', '-').replace('/', '-').replace('-.', '.');
-
-    return agentName;
+    return "a.${jobName}${buildNumber}".replace('_', '-').replace('/', '-').replace('-.', '.');
 }
 
 def buildLabel = buildAgentName(env.JOB_NAME, env.BUILD_NUMBER);
@@ -51,9 +49,26 @@ spec:
       env:
         - name: HOME
           value: ${workingDir}
-    - name: ibmcloud
-      image: docker.io/garagecatalyst/ibmcloud-dev:1.0.8
-      tty: true
+    - name: buildah
+      image: quay.io/buildah/stable:v1.9.0
+      command: ["/bin/bash"]
+      workingDir: ${workingDir}
+      envFrom:
+        - configMapRef:
+            name: ibmcloud-config
+        - secretRef:
+            name: ibmcloud-apikey
+      env:
+        - name: BUILD_NUMBER
+          value: ${env.BUILD_NUMBER}
+        - name: TLSVERIFY
+          value: false
+        - name: DOCKERFILE
+          value: "./Dockerfile"
+        - name: CONTEXT
+          value: "."
+    - name: deploy
+      image: docker.io/csantanapr/helm-kubectl
       command: ["/bin/bash"]
       workingDir: ${workingDir}
       envFrom:
@@ -69,7 +84,7 @@ spec:
             optional: true
       env:
         - name: CHART_NAME
-          value: template-node-typescript
+          value: base
         - name: CHART_ROOT
           value: chart
         - name: TMP_DIR
@@ -112,7 +127,7 @@ spec:
             stage('Build') {
                 sh '''#!/bin/bash
                     npm install
-                    npm run build
+                    npm run build --if-present
                 '''
             }
             stage('Test') {
@@ -122,12 +137,12 @@ spec:
             }
             stage('Publish pacts') {
                 sh '''#!/bin/bash
-                    npm run pact:publish
+                    npm run pact:publish --if-present
                 '''
             }
             stage('Verify pact') {
                 sh '''#!/bin/bash
-                    npm run pact:verify
+                    npm run pact:verify --if-present
                 '''
             }
             stage('Sonar scan') {
@@ -138,29 +153,29 @@ spec:
                   exit 0
                 fi
 
-                npm run sonarqube:scan
+                npm run sonarqube:scan --if-present
                 '''
             }
         }
-        container(name: 'ibmcloud', shell: '/bin/bash') {
+        container(name: 'buildah', shell: '/bin/bash') {
             stage('Build image') {
-                sh '''#!/bin/bash
-
+                sh '''
                     . ./env-config
 
-                    echo -e "=========================================================================================="
-                    echo -e "BUILDING CONTAINER IMAGE: ${REGISTRY_URL}/${REGISTRY_NAMESPACE}/${IMAGE_NAME}:${IMAGE_VERSION}"
-                    ibmcloud cr build -t ${REGISTRY_URL}/${REGISTRY_NAMESPACE}/${IMAGE_NAME}:${IMAGE_VERSION} .
-                    if [[ $? -ne 0 ]]; then
-                      exit 1
-                    fi
+                    IMAGE_TAG="${REGISTRY_URL}/${REGISTRY_NAMESPACE}/${IMAGE_NAME}:${IMAGE_VERSION}"
+                    BUILD_TAG="${REGISTRY_URL}/${REGISTRY_NAMESPACE}/${IMAGE_NAME}:${IMAGE_VERSION}-${BUILD_NUMBER}"
 
-                    if [[ -n "${BUILD_NUMBER}" ]]; then
-                        echo -e "BUILDING CONTAINER IMAGE: ${REGISTRY_URL}/${REGISTRY_NAMESPACE}/${IMAGE_NAME}:${IMAGE_VERSION}-${BUILD_NUMBER}"
-                        ibmcloud cr image-tag ${REGISTRY_URL}/${REGISTRY_NAMESPACE}/${IMAGE_NAME}:${IMAGE_VERSION} ${REGISTRY_URL}/${REGISTRY_NAMESPACE}/${IMAGE_NAME}:${IMAGE_VERSION}-${BUILD_NUMBER}
+                    buildah bud  --tls-verify="${TLSVERIFY}" --format=docker -f ${DOCKERFILE} -t ${IMAGE_TAG} ${CONTEXT}
+                    if [[ -n "${REGISTRY_USER}" ]] && [[ -n "${REGISTRY_PASSWORD}" ]]; then
+                      buildah login -u "${REGISTRY_USER}" -p "${REGISTRY_PASSWORD}" "${REGISTRY_URL}"
                     fi
+                    buildah push --tls-verify="${TLSVERIFY}" "${IMAGE_TAG}" "docker://${IMAGE_TAG}"
+                    buildah tag ${IMAGE_TAG} ${BUILD_TAG}
+                    buildah push --tls-verify="${TLSVERIFY}" "${BUILD_TAG}" "docker://${BUILD_TAG}"
                 '''
             }
+        }
+        container(name: 'deploy', shell: '/bin/bash') {
             stage('Deploy to DEV env') {
                 sh '''#!/bin/bash
                     echo "Deploying to ${ENVIRONMENT_NAME}"
@@ -346,4 +361,3 @@ spec:
         }
     }
 }
-
