@@ -67,6 +67,8 @@ spec:
           value: "./Dockerfile"
         - name: CONTEXT
           value: "."
+      securityContext:
+        privileged: true
     - name: deploy
       image: docker.io/csantanapr/helm-kubectl
       command: ["/bin/bash"]
@@ -95,8 +97,6 @@ spec:
           value: ${env.NAMESPACE}
         - name: BUILD_NUMBER
           value: ${env.BUILD_NUMBER}
-      securityContext:
-        privileged: true
     - name: trigger-cd
       image: docker.io/garagecatalyst/ibmcloud-dev:1.0.8
       tty: true
