@@ -73,8 +73,6 @@ spec:
           value: "./Dockerfile"
         - name: CONTEXT
           value: "."
-      securityContext:
-        privileged: true
     - name: deploy
       image: docker.io/csantanapr/helm-kubectl
       command: ["/bin/bash"]
