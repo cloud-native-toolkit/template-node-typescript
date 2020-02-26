@@ -95,6 +95,8 @@ spec:
           value: ${env.NAMESPACE}
         - name: BUILD_NUMBER
           value: ${env.BUILD_NUMBER}
+      securityContext:
+        privileged: true
     - name: trigger-cd
       image: docker.io/garagecatalyst/ibmcloud-dev:1.0.8
       tty: true
